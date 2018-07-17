@@ -24,32 +24,18 @@ char sensorID[34] = "";
 bool shouldSaveConfig = false;
 volatile bool measurementFlag = true;
 
-WiFiClient net;
-PubSubClient client(net);
+String host = "iot.research.hamk.fi";
 
-const char* fingerprint = "C3 57 0A 47 01 AA 16 DA 6E DA 51 1C B7 AC ED 64 5E AB EB 00";
+// this is how you declare a secured mqtt connection
+WiFiClientSecure net;
+PubSubClient client(host.c_str(), 8883, net);
+
+// and this for non secured
+// WiFiClient net;
+// PubSubClient client(host.c_str(), 1883, net);
 
 Ticker DAQTimer;
-//connect to mqtt server
-void reconnect() {
-  // Loop until we're reconnected
-  while (!client.connected()) {
-    Serial.print("Attempting MQTT connection...");
-    String clientId = "ESP8266Client-";
-    // Attempt to connect
-    if (client.connect(clientId.c_str())) {
-      Serial.println("connected");
-      // Once connected, publish an announcement...
-      // ... and resubscribe
-    } else {
-      Serial.print("failed, rc=");
-      Serial.print(client.state());
-      Serial.println(" try again in 5 seconds");
-      // Wait 5 seconds before retrying
-      delay(5000);
-    }
-  }
-}
+
 //callback notifying us of the need to save config
 void saveConfigCallback () {
   Serial.println("Should save config");
@@ -182,11 +168,8 @@ void setup() {
 
 void loop() {
   // put your main code here, to run repeatedly:
-  if (!client.connected()) {
-    reconnect();
-  }
   client.loop();
-  delay(10);
+  yield();
   if (measurementFlag) {
     pushMqtt();
   }
@@ -220,10 +203,24 @@ void pushMqtt() {
     }
   }
 
-
-
-  String fingerprint = "C3:57:0A:47:01:AA:16:DA:6E:DA:51:1C:B7:AC:ED:64:5E:AB:EB:00";
-  client.publish("puukoulu_sound_level", result_str);
-
+	uint8_t mqttRetries = 0;
+	if (!client.connected()) {
+		while ((!client.connected() || espClient.connected()) && mqttRetries <= 10) {
+			client.connect(clientID.c_str());
+			Serial.println(client.state());
+			if (client.connected()) {
+				client.publish("hamk/tekme/puukoulu_sound_level", result_str);
+				break;
+			}
+			else {
+				mqttRetries++;
+			}
+			client.loop();
+		}
+	}
+	else {
+		Serial.println(client.state());
+		client.publish("hamk/tekme/puukoulu_sound_level", result_str);
+	}
   measurementFlag = false;
 }
